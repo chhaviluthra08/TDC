@@ -4,7 +4,7 @@ An internal dashboard for The Date Crew's matchmakers to manage clients, view pr
 
 ## Live Demo
 
-**URL:** 
+**URL:** [https://tdc-ruby.vercel.app/]
 **Login:** `admin` / `tdc2024`
 
 ---
