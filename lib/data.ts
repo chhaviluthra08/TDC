@@ -8,7 +8,26 @@ export type Diet = 'Veg' | 'Non-Veg' | 'Eggetarian'
 export type FamilyType = 'Joint' | 'Nuclear'
 export type Habit = 'Never' | 'Occasionally' | 'Regularly'
 export type Manglik = 'Yes' | 'No' | "Don't Know"
+export type MatchOutcome = 'Pending' | 'Connected' | 'Unmatched'
 
+export interface MatchHistoryEntry {
+  candidateId: string
+  candidateName: string
+  candidateProfession: string
+  candidateCity: string
+  candidateCaste: string
+  candidateReligion: string
+  incomeLpa: number
+  score: number
+  sentAt: string
+  outcome: MatchOutcome
+}
+
+export interface NoteEntry {
+  id: string
+  text: string
+  createdAt: string
+}
 export interface Person {
   id: string
   firstName: string
@@ -48,7 +67,44 @@ export interface Client extends Person {
   status: ClientStatus
   sharedValue: string
 }
+export function getMatchHistory(clientId: string): MatchHistoryEntry[] {
+  try { return JSON.parse(localStorage.getItem(`tdc-history-${clientId}`) ?? '[]') }
+  catch { return [] }
+}
 
+export function saveMatchHistory(clientId: string, entries: MatchHistoryEntry[]) {
+  try { localStorage.setItem(`tdc-history-${clientId}`, JSON.stringify(entries)) }
+  catch { /* ignore */ }
+}
+
+export function getNotes(clientId: string): NoteEntry[] {
+  try {
+    const raw = localStorage.getItem(`tdc-notes-${clientId}`) ?? '[]'
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'string') {
+      if (!parsed.trim()) return []
+      const entry: NoteEntry = { id: Date.now().toString(), text: parsed, createdAt: new Date().toISOString() }
+      saveNotes(clientId, [entry])
+      return [entry]
+    }
+    return parsed as NoteEntry[]
+  } catch { return [] }
+}
+
+export function saveNotes(clientId: string, entries: NoteEntry[]) {
+  try { localStorage.setItem(`tdc-notes-${clientId}`, JSON.stringify(entries)) }
+  catch { /* ignore */ }
+}
+
+export function getJourneyStage(clientId: string): number {
+  try { return parseInt(localStorage.getItem(`tdc-journey-${clientId}`) ?? '0', 10) }
+  catch { return 0 }
+}
+
+export function saveJourneyStage(clientId: string, stage: number) {
+  try { localStorage.setItem(`tdc-journey-${clientId}`, String(stage)) }
+  catch { /* ignore */ }
+}
 // ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────
 function mulberry32(seed: number) {
   return function () {
@@ -236,6 +292,7 @@ export interface MatchResult {
   maxScore: number
   reasons: MatchReason[]
   tier: 'High Potential' | 'Good Match' | 'Low Match'
+  penalised: boolean
 }
 
 function tierFor(score: number): MatchResult['tier'] {
@@ -338,20 +395,23 @@ function scoreForFemaleClient(client: Person, c: Person) {
 
 export function getMatches(client: Client, limit = 12): MatchResult[] {
   const pool = client.gender === 'Male' ? FEMALE_POOL : MALE_POOL
-  const scorer =
-    client.gender === 'Male' ? scoreForMaleClient : scoreForFemaleClient
+  const scorer = client.gender === 'Male' ? scoreForMaleClient : scoreForFemaleClient
+
+  const history = getMatchHistory(client.id)
+  const unmatched = history.filter(h => h.outcome === 'Unmatched')
+  const unmatchedCastes = new Set(unmatched.map(h => h.candidateCaste))
+  const unmatchedReligions = new Set(unmatched.map(h => h.candidateReligion))
+  const unmatchedCities = new Set(unmatched.map(h => h.candidateCity))
 
   const results: MatchResult[] = pool.map((candidate) => {
     const { raw, max, reasons } = scorer(client, candidate)
-    const score = Math.round((raw / max) * 100)
-    return {
-      candidate,
-      rawScore: raw,
-      maxScore: max,
-      score,
-      reasons: reasons.sort((a, b) => b.weight - a.weight),
-      tier: tierFor(score),
+    let score = Math.round((raw / max) * 100)
+    let penalised = false
+    if (unmatchedCastes.has(candidate.caste) || unmatchedReligions.has(candidate.religion) || unmatchedCities.has(candidate.city)) {
+      score = Math.max(0, score - 20)
+      penalised = true
     }
+    return { candidate, rawScore: raw, maxScore: max, score, reasons: reasons.sort((a, b) => b.weight - a.weight), tier: tierFor(score), penalised }
   })
 
   return results.sort((a, b) => b.score - a.score).slice(0, limit)

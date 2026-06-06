@@ -83,6 +83,11 @@ export function MatchCard({
           ))}
         </ul>
       )}
+      {match.penalised && (
+        <span style={{ fontSize: 10, background: '#FAF1EF', color: '#B8695E', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
+          ⚠ Similar to previous unmatch
+        </span>
+      )}
 
       <button
         onClick={() => onSend(match)}
